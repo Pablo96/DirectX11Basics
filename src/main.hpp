@@ -18,7 +18,7 @@ the window. If this get's too dificult i'd use win32 api which i used before.
 #define NOATOM
 #define NOCLIPBOARD
 #define NOCOLOR
-#define NOCTLMGR
+//#define NOCTLMGR // Control and Dialog routines
 #define NODRAWTEXT
 #define NOKERNEL
 #define NONLS
@@ -46,6 +46,8 @@ the window. If this get's too dificult i'd use win32 api which i used before.
 
 
 #include <windows.h>
+#include <WinInet.h>
+#include <ShlObj.h> //COM base api / IActiveDesktop
 #include <iostream>
 
 

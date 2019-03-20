@@ -39,4 +39,5 @@ project "DirectX11Basics"
     links
     {
         "GLFW",
+        "D3D11",
     }
