@@ -1,0 +1,10 @@
+.vs/
+bin/
+obj/
+premake/
+libs/
+*.exe
+*.vcxproj.user
+*.vcxproj
+*.sln
+
