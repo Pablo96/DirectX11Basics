@@ -40,4 +40,5 @@ project "DirectX11Basics"
     {
         "GLFW",
         "D3D11",
+        "D3DCompiler"
     }

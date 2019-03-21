@@ -5,7 +5,7 @@
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
-#include <d3d11.h>
+
 
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -68,15 +68,16 @@ int main(int in_varc, char** in_varv)
 	sd.Flags = 0;
 
 	const char* win32_adapter = glfwGetWin32Adapter(glfwGetPrimaryMonitor());
-	IDXGISwapChain* swapChain;
-	ID3D11Device* device;
-	ID3D11DeviceContext* context;
+	Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain;
+	Microsoft::WRL::ComPtr<ID3D11Device> device;
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+	UINT creationFlags = D3D11_CREATE_DEVICE_DEBUG;
 
 	D3D11CreateDeviceAndSwapChain(
 		NULL,
 		D3D_DRIVER_TYPE_HARDWARE,
 		nullptr,
-		0,
+		creationFlags,
 		nullptr,
 		0,
 		D3D11_SDK_VERSION,
@@ -88,19 +89,133 @@ int main(int in_varc, char** in_varv)
 	);
 
 
-	ID3D11Resource* backBuffer = nullptr;
-	swapChain->GetBuffer(0, __uuidof(ID3D11Resource), (void**)&backBuffer);
+	Microsoft::WRL::ComPtr<ID3D11Resource> backBuffer = nullptr;
+	swapChain->GetBuffer(0, __uuidof(ID3D11Resource), reinterpret_cast<void**>(backBuffer.GetAddressOf()));
 	
-	ID3D11RenderTargetView* targetView;
-	device->CreateRenderTargetView(backBuffer, nullptr, &targetView);
-	backBuffer->Release();
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> targetView;
+	device->CreateRenderTargetView(backBuffer.Get(), nullptr, &targetView);
+
+	context->OMSetRenderTargets(1, targetView.GetAddressOf(), NULL);
+
+
+	D3D11_VIEWPORT viewport;
+	ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
+
+	viewport.Height = HEIGHT;
+	viewport.Width = WIDTH;
+	viewport.TopLeftX = 0;
+	viewport.TopLeftY = 0;
+
+	context->RSSetViewports(1, &viewport);
 	
 	//Like clear color in opengl
 	float color[] = { 0, 0.5f, 1, 1 };
-	context->ClearRenderTargetView(targetView, color);
+	context->ClearRenderTargetView(targetView.Get(), color);
+	swapChain->Present(1, NULL);
+
+	// SHADERS
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
+	Microsoft::WRL::ComPtr<ID3DBlob> vertexBlob;
+	{
+		using namespace Microsoft::WRL;
+
+		D3DReadFileToBlob(L"bin/debug/VertexShader.cso", &vertexBlob);
+		device->CreateVertexShader(
+			vertexBlob->GetBufferPointer(), //pointer to the compiled shader.
+			vertexBlob->GetBufferSize(), // Size of the compiled vertex shader
+			nullptr,
+			&vertexShader // Address of a pointer to the vertex shader
+		);
+
+	}
+	
+
+	Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout;
+	D3D11_INPUT_ELEMENT_DESC layout[] = {
+	{
+		"POSITION",
+		0,
+		DXGI_FORMAT::DXGI_FORMAT_R32G32_FLOAT,
+		0,
+        0,
+		D3D11_INPUT_CLASSIFICATION::D3D11_INPUT_PER_VERTEX_DATA,
+		0
+	} };
+
+	device->CreateInputLayout(
+		layout,
+		1,
+		vertexBlob->GetBufferPointer(),
+		vertexBlob->GetBufferSize(),
+		inputLayout.GetAddressOf()
+	);
+
+	context->IASetInputLayout(inputLayout.Get());
+
+
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
+	Microsoft::WRL::ComPtr<ID3DBlob> pixelBlob;
+	{
+		using namespace Microsoft::WRL;
+
+		D3DReadFileToBlob(L"bin/debug/FragmentShader.cso", &pixelBlob);
+		device->CreatePixelShader(
+			pixelBlob->GetBufferPointer(), //pointer to the compiled shader.
+			pixelBlob->GetBufferSize(), // Size of the compiled vertex shader
+			nullptr,
+			&pixelShader // Address of a pointer to the vertex shader
+		);
+
+	}
+
+	const UINT vertexCount = 6;
+	const UINT stride = sizeof(float) * vertexCount;
+	const UINT offset = 0;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
+	
+	// Pass triangle to the GPU buffers
+	{
+		// define the triangle
+		const float vertices[vertexCount] =
+		{
+			 0.0f,  0.5f,
+			 0.5f, -0.5f,
+			-0.5f, -0.5f,
+		};
+
+		using namespace Microsoft::WRL;
+		
+		ComPtr<ID3D11Buffer> vertexBuffer;
+		
+		// Describes a buffer resource
+		D3D11_BUFFER_DESC bufferDescription;
+		ZeroMemory(&bufferDescription, sizeof(D3D11_BUFFER_DESC));
+
+		bufferDescription.Usage = D3D11_USAGE_DEFAULT;
+		bufferDescription.ByteWidth = stride;
+		bufferDescription.StructureByteStride = vertexCount;
+		bufferDescription.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		bufferDescription.CPUAccessFlags = 0; // 0 if no CPU access is necessary
+		bufferDescription.MiscFlags = 0; // 0 if unused
+
+		// initializing a subresource (in this case the vertex buffer)
+		D3D11_SUBRESOURCE_DATA bufferSourceData;
+		ZeroMemory(&bufferSourceData, sizeof(D3D11_SUBRESOURCE_DATA));
+		bufferSourceData.pSysMem = vertices;
+
+		device->CreateBuffer(&bufferDescription, &bufferSourceData, &vertexBuffer);
+		context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+	}
+
+
 
 	while (!glfwWindowShouldClose(window))
 	{
+		// bind the vertex shader
+		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		//Drawing!!
+		context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		context->Draw(3, 0);
 
 		// Like swap buffers in opengl
 		swapChain->Present(1, 0);
