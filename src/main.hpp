@@ -51,6 +51,7 @@ the window. If this get's too dificult i'd use win32 api which i used before.
 #include <ShlObj.h> //COM base api / IActiveDesktop
 #include <d3d11.h> // DirectX 11
 #include <d3dcompiler.h> // HLSL
+#include <dxgi1_3.h> //IDXGIDevice3 
 #include <iostream>
 
 

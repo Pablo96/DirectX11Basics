@@ -42,3 +42,12 @@ project "DirectX11Basics"
         "D3D11",
         "D3DCompiler"
     }
+
+    filter "configurations:Debug"
+        defines "_DEBUG"
+    
+    filter "configurations:Release"
+        defines "_RELEASE"
+
+    filter "configurations:Dist"
+        defines "_DIST"

@@ -14,104 +14,185 @@ void processInput(GLFWwindow* window);
 
 int main(int in_varc, char** in_varv)
 {
-	if (!glfwInit())
+	// WINDOW CREATION (GLFW)
+	GLFWwindow* window = nullptr;
+	HWND win32_window = nullptr;
 	{
-		std::cerr << "ERROR: couldnt init glfw." << std::endl;
-		return 1;
+		if (!glfwInit())
+		{
+			std::cerr << "ERROR: couldnt init glfw." << std::endl;
+			return 1;
+		}
+
+		// tell glfw we want to use core profile(no legacy stuff)
+		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+		glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
+		glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
+		// NO API since we wont use opengl
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+		window = glfwCreateWindow(WIDTH, HEIGHT, TITLE, NULL, NULL);
+		if (!window)
+		{
+			std::cerr << "ERROR: couldnt create window." << std::endl;
+			glfwTerminate();
+			return 1;
+		}
+
+		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		glfwSetCursorPosCallback(window, mouse_callback);
+
+		// Win32 window handler (yeeey glfw did it for us)
+		win32_window = glfwGetWin32Window(window);
 	}
 
-	// tell glfw we want to use core profile(no legacy stuff)
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-	glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
-	glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
-	// NO API since we wont use opengl
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	//////////////////////////////////////////////////////////////////////////
+	//					DIRECTX 11 STUFF
+	//////////////////////////////////////////////////////////////////////////
+	/*
+	 * Here we say the minimum level of hardware our app support.
+	 * We will support minimum 10.1 and the Current should be 11.1
+	 */
+	D3D_FEATURE_LEVEL levels[] = {
+		D3D_FEATURE_LEVEL_10_1,
+		D3D_FEATURE_LEVEL_11_0,
+		D3D_FEATURE_LEVEL_11_1
+	};
 
-	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, TITLE, NULL, NULL);
-	if (!window)
-	{
-		std::cerr << "ERROR: couldnt create window." << std::endl;
-		glfwTerminate();
-		return 1;
-	}
+	// I think i will use Direct2D for menues. Not in this example but just as reminder.
+	// This flag adds support for surfaces with a color-channel ordering different
+	// from the API default. It is required for compatibility with Direct2D.
+	UINT deviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
-	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-	glfwSetCursorPosCallback(window, mouse_callback);
+	// This enable debug info for directX
+#if defined(DEBUG) || defined(_DEBUG)
+	deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
 
-	// Win32 window handler (yeeey glfw did it for us)
-	HWND win32_window = glfwGetWin32Window(window);
-
-	// Swap chain descriptor
-	DXGI_SWAP_CHAIN_DESC sd = {0};
-	// Buffer filled with 0 size then guess it set to the one we want
-	sd.BufferDesc.Width = 0;
-	sd.BufferDesc.Height = 0;
-	// Basiclly we say use 8 bit per color channel with the "UNORM" thing at the end
-	sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	// Not a clue
-	sd.BufferDesc.RefreshRate.Numerator = 0;
-	sd.BufferDesc.RefreshRate.Denominator= 0;
-	sd.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
-	sd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
-	sd.SampleDesc.Count = 1;
-	sd.SampleDesc.Quality = 0;
-	//  Here we say this is the  buffer target to output da picture
-	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	//  Use 1 buffer for front and 1 for back (weird)
-	sd.BufferCount = 1;
-	// Here we say which window get the rendered picture (opengl kinda context)
-	sd.OutputWindow = win32_window;
-	// Windowed Mode
-	sd.Windowed = TRUE;
-	// Not a clue
-	sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-	sd.Flags = 0;
-
-	const char* win32_adapter = glfwGetWin32Adapter(glfwGetPrimaryMonitor());
-	Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain;
-	Microsoft::WRL::ComPtr<ID3D11Device> device;
+	//////////////////////////////////////////////////////////////////////////
+	// CREATE THE DIRECT3D 11 API DEVICE OBJECT AND A CORRESPONDING CONTEXT.
+	//////////////////////////////////////////////////////////////////////////
+	Microsoft::WRL::ComPtr<ID3D11Device>        device;
 	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
-	UINT creationFlags = D3D11_CREATE_DEVICE_DEBUG;
 
-	D3D11CreateDeviceAndSwapChain(
-		NULL,
-		D3D_DRIVER_TYPE_HARDWARE,
-		nullptr,
-		creationFlags,
-		nullptr,
+
+	D3D11CreateDevice(
+		nullptr,                    // Specify nullptr to use the default adapter.
+		D3D_DRIVER_TYPE_HARDWARE,   // Create a device using the hardware graphics driver.
+		0,                          // Should be 0 unless the driver is D3D_DRIVER_TYPE_SOFTWARE.
+		deviceFlags,                // Set debug and Direct2D compatibility flags.
+		levels,                     // List of feature levels this app can support.
+		ARRAYSIZE(levels),          // Size of the list above.
+		D3D11_SDK_VERSION,          // Always set this to D3D11_SDK_VERSION for Windows Store apps.
+		&device,                    // Returns the Direct3D device created.
+		&m_featureLevel,            // Returns feature level of device created.
+		&context                    // Returns the device immediate context.
+	);
+
+	//////////////////////////////////////////////////////////////////////////
+	//				CREATE THE SWAP CHAIN
+	//////////////////////////////////////////////////////////////////////////
+	
+	DXGI_SWAP_CHAIN_DESC sd;
+	ZeroMemory(&sd, sizeof(DXGI_SWAP_CHAIN_DESC));
+	{
+		// Buffer filled with 0 size then guess it set to the one we want
+		sd.Windowed = TRUE;
+		sd.BufferCount = 2;
+		sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		sd.SampleDesc.Count = 1;	//multisampling setting
+		sd.SampleDesc.Quality = 0;	//vendor-specific flag
+		sd.OutputWindow = win32_window;
+	}
+
+	// Create the DXGI device object to use in other factories, such as Direct2D.
+	Microsoft::WRL::ComPtr<IDXGIDevice3> dxgiDevice;
+	device.As(&dxgiDevice);
+
+	// Create swap chain.
+	Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+	Microsoft::WRL::ComPtr<IDXGIFactory> factory;
+	Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain;
+
+	HRESULT hr = dxgiDevice->GetAdapter(&adapter);
+
+	if (SUCCEEDED(hr))
+	{
+		adapter->GetParent(IID_PPV_ARGS(&factory));
+
+		hr = factory->CreateSwapChain(
+			device.Get(),
+			&sd,
+			&swapChain
+		);
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	//				CREATE A RENDER TARGET FOR DRAWING
+	//////////////////////////////////////////////////////////////////////////
+
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer = nullptr;
+	swapChain->GetBuffer(
 		0,
-		D3D11_SDK_VERSION,
-		&sd,
-		&swapChain,
-		&device,
+		__uuidof(ID3D11Texture2D),
+		(void**)&backBuffer);
+	
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> targetView;
+	device->CreateRenderTargetView(
+		backBuffer.Get(),
 		nullptr,
-		&context
+		targetView.GetAddressOf()
+	);
+
+	Microsoft::WRL::ComPtr<D3D11_TEXTURE2D_DESC> m_bbDesc;
+	backBuffer->GetDesc(m_bbDesc.Get());
+
+	// if you don't supply this view no per-pixel depth testing is performed
+	CD3D11_TEXTURE2D_DESC depthStencilDesc(
+		DXGI_FORMAT_D24_UNORM_S8_UINT,
+		static_cast<UINT> (m_bbDesc->Width),
+		static_cast<UINT> (m_bbDesc->Height),
+		1, // This depth stencil view has only one texture.
+		1, // Use a single mipmap level.
+		D3D11_BIND_DEPTH_STENCIL
+	);
+
+	CD3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc(D3D11_DSV_DIMENSION_TEXTURE2D);
+
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencil;
+
+	device->CreateDepthStencilView(
+		depthStencil.Get(),
+		&depthStencilViewDesc,
+		&depthStencilView
 	);
 
 
-	Microsoft::WRL::ComPtr<ID3D11Resource> backBuffer = nullptr;
-	swapChain->GetBuffer(0, __uuidof(ID3D11Resource), reinterpret_cast<void**>(backBuffer.GetAddressOf()));
+	Microsoft::WRL::ComPtr<D3D11_VIEWPORT> viewport;
+	ZeroMemory(viewport.Get(), sizeof(D3D11_VIEWPORT));
+	{
+		viewport->Height = (float) m_bbDesc->Height;
+		viewport->Width = (float)m_bbDesc->Width;
+		viewport->MinDepth = 0;
+		viewport->MaxDepth = 1;
+	}
+
+	context->RSSetViewports(1, viewport.Get());
 	
-	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> targetView;
-	device->CreateRenderTargetView(backBuffer.Get(), nullptr, &targetView);
 
-	context->OMSetRenderTargets(1, targetView.GetAddressOf(), NULL);
+	//------------------------------------------------------------------------
 
 
-	D3D11_VIEWPORT viewport;
-	ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
-
-	viewport.Height = HEIGHT;
-	viewport.Width = WIDTH;
-	viewport.TopLeftX = 0;
-	viewport.TopLeftY = 0;
-
-	context->RSSetViewports(1, &viewport);
-	
 	//Like clear color in opengl
 	float color[] = { 0, 0.5f, 1, 1 };
 	context->ClearRenderTargetView(targetView.Get(), color);
-	swapChain->Present(1, NULL);
+	swapChain->Present(1, 0);
+
+
+
 
 	// SHADERS
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
@@ -208,14 +289,14 @@ int main(int in_varc, char** in_varv)
 	}
 
 
-
+	// MAIN LOOP
 	while (!glfwWindowShouldClose(window))
 	{
 		// bind the vertex shader
 		context->VSSetShader(vertexShader.Get(), nullptr, 0);
 		//Drawing!!
 		context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		context->Draw(3, 0);
+		context->Draw(6, 0);
 
 		// Like swap buffers in opengl
 		swapChain->Present(1, 0);
