@@ -7,51 +7,54 @@ the window. If this get's too dificult i'd use win32 api which i used before.
 // get weird errors when trying to do some windows stuff, try removing some
 // (or all) of these defines (it will increase build time though).
 
-#define WIN32_LEAN_AND_MEAN //exclude APIs such as Cryptography, DDE, RPC, Shell, and Windows Sockets.
-#define NOGDICAPMASKS
+//#define WIN32_LEAN_AND_MEAN //exclude APIs such as Cryptography, DDE, RPC, Shell, and Windows Sockets.
+//#define NOGDICAPMASKS
 //#define NOSYSMETRICS
-#define NOMENUS
-#define NOICONS
-#define NOSYSCOMMANDS
-#define NORASTEROPS
-#define OEMRESOURCE
-#define NOATOM
-#define NOCLIPBOARD
-#define NOCOLOR
+//#define NOMENUS
+//#define NOICONS
+//#define NOSYSCOMMANDS
+//#define NORASTEROPS
+//#define OEMRESOURCE
+//#define NOATOM
+//#define NOCLIPBOARD
+//#define NOCOLOR
 //#define NOCTLMGR // Control and Dialog routines
-#define NODRAWTEXT
-#define NOKERNEL
-#define NONLS
-#define NOMEMMGR
-#define NOMETAFILE
-#define NOMINMAX
-#define NOOPENFILE
-#define NOSCROLL
-#define NOSERVICE
-#define NOSOUND
-#define NOTEXTMETRIC
-#define NOWH
-#define NOCOMM  // excludes the serial communication API
-#define NOKANJI
-#define NOHELP
+//#define NODRAWTEXT
+//#define NOKERNEL
+//#define NONLS
+//#define NOMEMMGR
+//#define NOMETAFILE
+//#define NOMINMAX
+//#define NOOPENFILE
+//#define NOSCROLL
+//#define NOSERVICE
+//#define NOSOUND
+//#define NOTEXTMETRIC
+//#define NOWH
+//#define NOCOMM  // excludes the serial communication API
+//#define NOKANJI
+//#define NOHELP
 //#define NOPROFILER
-#define NODEFERWINDOWPOS
-#define NOMCX
-#define NORPC
-#define NOPROXYSTUB
-#define NOIMAGE
-#define NOTAPE
+//#define NODEFERWINDOWPOS
+//#define NOMCX
+//#define NORPC
+//#define NOPROXYSTUB
+//#define NOIMAGE
+//#define NOTAPE
 
-#define STRICT
+//#define STRICT
 
-
+#include <crtdbg.h>
 #include <windows.h>
 #include <WinInet.h>
 #include <wrl.h> //ComPtr
 #include <ShlObj.h> //COM base api / IActiveDesktop
-#include <d3d11.h> // DirectX 11
+#include <d3d11_3.h> // DirectX 11
 #include <d3dcompiler.h> // HLSL
-#include <dxgi1_3.h> //IDXGIDevice3 
+#include <dxgi1_2.h>
+#include <dxgi1_3.h> //IDXGIDevice3
+#include <dxgi1_4.h> //IDXGIFactory4
+#include <DirectXMath.h> // DX math
 #include <iostream>
 
 

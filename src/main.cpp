@@ -6,11 +6,31 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
+struct Vertex    //Overloaded Vertex Structure
+{
+	Vertex() {}
+	Vertex(float x, float y, float z,
+		float nx, float ny, float nz)
+		: pos(x, y, z), normal(nx, ny, nz) {}
 
+	DirectX::XMFLOAT3 pos;
+	DirectX::XMFLOAT3 normal;
+};
+
+struct Light
+{
+	Light()
+	{
+		ZeroMemory(this, sizeof(Light));
+	}
+	DirectX::XMFLOAT3 dir;
+	float pad;
+	DirectX::XMFLOAT4 ambient;
+	DirectX::XMFLOAT4 diffuse;
+};
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow* window);
-
 
 int main(int in_varc, char** in_varv)
 {
@@ -46,268 +66,385 @@ int main(int in_varc, char** in_varv)
 		win32_window = glfwGetWin32Window(window);
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	//					DIRECTX 11 STUFF
-	//////////////////////////////////////////////////////////////////////////
-	/*
-	 * Here we say the minimum level of hardware our app support.
-	 * We will support minimum 10.1 and the Current should be 11.1
-	 */
-	D3D_FEATURE_LEVEL levels[] = {
-		D3D_FEATURE_LEVEL_10_1,
-		D3D_FEATURE_LEVEL_11_0,
-		D3D_FEATURE_LEVEL_11_1
-	};
-
-	// I think i will use Direct2D for menues. Not in this example but just as reminder.
-	// This flag adds support for surfaces with a color-channel ordering different
-	// from the API default. It is required for compatibility with Direct2D.
-	UINT deviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-
-	// This enable debug info for directX
-#if defined(DEBUG) || defined(_DEBUG)
-	deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
-
-	//////////////////////////////////////////////////////////////////////////
-	// CREATE THE DIRECT3D 11 API DEVICE OBJECT AND A CORRESPONDING CONTEXT.
-	//////////////////////////////////////////////////////////////////////////
-	Microsoft::WRL::ComPtr<ID3D11Device>        device;
-	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+	HRESULT hr;
+	IDXGISwapChain* SwapChain;
+	ID3D11Device* d3d11Device;
+	ID3D11DeviceContext* d3d11DevCon;
+	ID3D11RenderTargetView* renderTargetView;
+	ID3D11DepthStencilView* depthStencilView;
+	ID3D11Texture2D* depthStencilBuffer;
 
 
-	D3D11CreateDevice(
-		nullptr,                    // Specify nullptr to use the default adapter.
-		D3D_DRIVER_TYPE_HARDWARE,   // Create a device using the hardware graphics driver.
-		0,                          // Should be 0 unless the driver is D3D_DRIVER_TYPE_SOFTWARE.
-		deviceFlags,                // Set debug and Direct2D compatibility flags.
-		levels,                     // List of feature levels this app can support.
-		ARRAYSIZE(levels),          // Size of the list above.
-		D3D11_SDK_VERSION,          // Always set this to D3D11_SDK_VERSION for Windows Store apps.
-		&device,                    // Returns the Direct3D device created.
-		&m_featureLevel,            // Returns feature level of device created.
-		&context                    // Returns the device immediate context.
-	);
+	float red = 0.0f;
+	float green = 0.0f;
+	float blue = 0.0f;
+	int colormodr = 1;
+	int colormodg = 1;
+	int colormodb = 1;
 
-	//////////////////////////////////////////////////////////////////////////
-	//				CREATE THE SWAP CHAIN
-	//////////////////////////////////////////////////////////////////////////
-	
-	DXGI_SWAP_CHAIN_DESC sd;
-	ZeroMemory(&sd, sizeof(DXGI_SWAP_CHAIN_DESC));
-	{
-		// Buffer filled with 0 size then guess it set to the one we want
-		sd.Windowed = TRUE;
-		sd.BufferCount = 2;
-		sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-		sd.SampleDesc.Count = 1;	//multisampling setting
-		sd.SampleDesc.Quality = 0;	//vendor-specific flag
-		sd.OutputWindow = win32_window;
-	}
+	//Describe our Buffer
+	DXGI_MODE_DESC bufferDesc;
+	ZeroMemory(&bufferDesc, sizeof(DXGI_MODE_DESC));
 
-	// Create the DXGI device object to use in other factories, such as Direct2D.
-	Microsoft::WRL::ComPtr<IDXGIDevice3> dxgiDevice;
-	device.As(&dxgiDevice);
+	bufferDesc.Width = WIDTH;
+	bufferDesc.Height = HEIGHT;
+	bufferDesc.RefreshRate.Numerator = 60;
+	bufferDesc.RefreshRate.Denominator = 1;
+	bufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	bufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+	bufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
 
-	// Create swap chain.
-	Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
-	Microsoft::WRL::ComPtr<IDXGIFactory> factory;
-	Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain;
+	//Describe our SwapChain
+	DXGI_SWAP_CHAIN_DESC swapChainDesc;
+	ZeroMemory(&swapChainDesc, sizeof(DXGI_SWAP_CHAIN_DESC));
 
-	HRESULT hr = dxgiDevice->GetAdapter(&adapter);
-
-	if (SUCCEEDED(hr))
-	{
-		adapter->GetParent(IID_PPV_ARGS(&factory));
-
-		hr = factory->CreateSwapChain(
-			device.Get(),
-			&sd,
-			&swapChain
-		);
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	//				CREATE A RENDER TARGET FOR DRAWING
-	//////////////////////////////////////////////////////////////////////////
-
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer = nullptr;
-	swapChain->GetBuffer(
-		0,
-		__uuidof(ID3D11Texture2D),
-		(void**)&backBuffer);
-	
-	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> targetView;
-	device->CreateRenderTargetView(
-		backBuffer.Get(),
-		nullptr,
-		targetView.GetAddressOf()
-	);
-
-	Microsoft::WRL::ComPtr<D3D11_TEXTURE2D_DESC> m_bbDesc;
-	backBuffer->GetDesc(m_bbDesc.Get());
-
-	// if you don't supply this view no per-pixel depth testing is performed
-	CD3D11_TEXTURE2D_DESC depthStencilDesc(
-		DXGI_FORMAT_D24_UNORM_S8_UINT,
-		static_cast<UINT> (m_bbDesc->Width),
-		static_cast<UINT> (m_bbDesc->Height),
-		1, // This depth stencil view has only one texture.
-		1, // Use a single mipmap level.
-		D3D11_BIND_DEPTH_STENCIL
-	);
-
-	CD3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc(D3D11_DSV_DIMENSION_TEXTURE2D);
-
-	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencil;
-
-	device->CreateDepthStencilView(
-		depthStencil.Get(),
-		&depthStencilViewDesc,
-		&depthStencilView
-	);
+	swapChainDesc.BufferDesc = bufferDesc;
+	swapChainDesc.SampleDesc.Count = 1;
+	swapChainDesc.SampleDesc.Quality = 0;
+	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	swapChainDesc.BufferCount = 1;
+	swapChainDesc.OutputWindow = win32_window;
+	swapChainDesc.Windowed = TRUE;
+	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
 
-	Microsoft::WRL::ComPtr<D3D11_VIEWPORT> viewport;
-	ZeroMemory(viewport.Get(), sizeof(D3D11_VIEWPORT));
-	{
-		viewport->Height = (float) m_bbDesc->Height;
-		viewport->Width = (float)m_bbDesc->Width;
-		viewport->MinDepth = 0;
-		viewport->MaxDepth = 1;
-	}
+	//Create our SwapChain
+	hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, NULL, NULL, NULL,
+		D3D11_SDK_VERSION, &swapChainDesc, &SwapChain, &d3d11Device, NULL, &d3d11DevCon);
 
-	context->RSSetViewports(1, viewport.Get());
-	
+	//Create our BackBuffer
+	ID3D11Texture2D* BackBuffer;
+	hr = SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&BackBuffer);
 
-	//------------------------------------------------------------------------
+	//Create our Render Target
+	hr = d3d11Device->CreateRenderTargetView(BackBuffer, NULL, &renderTargetView);
+	BackBuffer->Release();
 
 
-	//Like clear color in opengl
-	float color[] = { 0, 0.5f, 1, 1 };
-	context->ClearRenderTargetView(targetView.Get(), color);
-	swapChain->Present(1, 0);
+	//Describe our Depth/Stencil Buffer
+	D3D11_TEXTURE2D_DESC depthStencilDesc;
+	depthStencilDesc.Width = WIDTH;
+	depthStencilDesc.Height = HEIGHT;
+	depthStencilDesc.MipLevels = 1;
+	depthStencilDesc.ArraySize = 1;
+	depthStencilDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	depthStencilDesc.SampleDesc.Count = 1;
+	depthStencilDesc.SampleDesc.Quality = 0;
+	depthStencilDesc.Usage = D3D11_USAGE_DEFAULT;
+	depthStencilDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	depthStencilDesc.CPUAccessFlags = 0;
+	depthStencilDesc.MiscFlags = 0;
 
+	d3d11Device->CreateTexture2D(&depthStencilDesc, NULL, &depthStencilBuffer);
+	d3d11Device->CreateDepthStencilView(depthStencilBuffer, NULL, &depthStencilView);
 
+	//Set our Render Target with Depth target
+	d3d11DevCon->OMSetRenderTargets(1, &renderTargetView, depthStencilView);
 
+	// VIEWPORT
+	//Create the Viewport
+	D3D11_VIEWPORT viewport;
+	ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
+
+	viewport.TopLeftX = 0;
+	viewport.TopLeftY = 0;
+	viewport.Width = WIDTH;
+	viewport.Height = HEIGHT;
+	viewport.MinDepth = 0.0f;
+	viewport.MaxDepth = 1.0f;
+
+	//Set the Viewport
+	d3d11DevCon->RSSetViewports(1, &viewport);
+
+	// -------------------------------------------------------------------------------------------------
+	ID3D11Buffer* squareIndexBuffer;
+	ID3D11Buffer* squareVertBuffer;
+	ID3D11VertexShader* VS;
+	ID3D11PixelShader* PS;
+	ID3D10Blob* VS_Buffer;
+	ID3D10Blob* PS_Buffer;
+	ID3D11InputLayout* vertLayout;
 
 	// SHADERS
-	Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
-	Microsoft::WRL::ComPtr<ID3DBlob> vertexBlob;
+	//Compile Shaders from shader file
+	hr = D3DCompileFromFile(L"VertexShader.hlsl", 0, 0, "main", "vs_5_0", 0, 0, &VS_Buffer, 0);
+	hr = D3DCompileFromFile(L"FragmentShader.hlsl", 0, 0, "PSMain", "ps_5_0", 0, 0, &PS_Buffer, 0);
+
+	//Create the Shader Objects
+	hr = d3d11Device->CreateVertexShader(VS_Buffer->GetBufferPointer(), VS_Buffer->GetBufferSize(), NULL, &VS);
+	hr = d3d11Device->CreatePixelShader(PS_Buffer->GetBufferPointer(), PS_Buffer->GetBufferSize(), NULL, &PS);
+
+	//Set Vertex and Pixel Shaders
+	d3d11DevCon->VSSetShader(VS, 0, 0);
+	d3d11DevCon->PSSetShader(PS, 0, 0);
+
+	D3D11_INPUT_ELEMENT_DESC layout[] =
 	{
-		using namespace Microsoft::WRL;
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "NORMAL"  , 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+	};
+	UINT numElements = ARRAYSIZE(layout);
 
-		D3DReadFileToBlob(L"bin/debug/VertexShader.cso", &vertexBlob);
-		device->CreateVertexShader(
-			vertexBlob->GetBufferPointer(), //pointer to the compiled shader.
-			vertexBlob->GetBufferSize(), // Size of the compiled vertex shader
-			nullptr,
-			&vertexShader // Address of a pointer to the vertex shader
-		);
+	//Create the Input Layout
+	hr = d3d11Device->CreateInputLayout(layout, numElements, VS_Buffer->GetBufferPointer(),
+		VS_Buffer->GetBufferSize(), &vertLayout);
 
-	}
+	//Set the Input Layout
+	d3d11DevCon->IASetInputLayout(vertLayout);
+
+
+	// GEOMETRY
+	//Vertices
+	Vertex v[] =
+	{
+		// Front Face
+		Vertex(-1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f),
+		Vertex(-1.0f, +1.0f, -1.0f, -1.0f,  1.0f, -1.0f),
+		Vertex(+1.0f, +1.0f, -1.0f, 1.0f,  1.0f, -1.0f),
+		Vertex(+1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f),
+
+		// Back Face
+		Vertex(-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f),
+		Vertex(+1.0f, -1.0f, 1.0f,  1.0f, -1.0f, 1.0f),
+		Vertex(+1.0f,  1.0f, 1.0f,  1.0f,  1.0f, 1.0f),
+		Vertex(-1.0f,  1.0f, 1.0f, -1.0f,  1.0f, 1.0f),
+
+		// Top Face
+		Vertex(-1.0f, 1.0f, -1.0f,-1.0f, 1.0f, -1.0f),
+		Vertex(-1.0f, 1.0f,  1.0f,-1.0f, 1.0f,  1.0f),
+		Vertex(+1.0f, 1.0f,  1.0f, 1.0f, 1.0f,  1.0f),
+		Vertex(+1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f),
+
+		// Bottom Face
+		Vertex(-1.0f, -1.0f, -1.0f,-1.0f, -1.0f, -1.0f),
+		Vertex(+1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f),
+		Vertex(+1.0f, -1.0f,  1.0f, 1.0f, -1.0f,  1.0f),
+		Vertex(-1.0f, -1.0f,  1.0f,-1.0f, -1.0f,  1.0f),
+
+		// Left Face
+		Vertex(-1.0f, -1.0f,  1.0f,-1.0f, -1.0f,  1.0f),
+		Vertex(-1.0f,  1.0f,  1.0f,-1.0f,  1.0f,  1.0f),
+		Vertex(-1.0f,  1.0f, -1.0f,-1.0f,  1.0f, -1.0f),
+		Vertex(-1.0f, -1.0f, -1.0f,-1.0f, -1.0f, -1.0f),
+
+		// Right Face
+		Vertex(1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f),
+		Vertex(1.0f,  1.0f, -1.0f, 1.0f,  1.0f, -1.0f),
+		Vertex(1.0f,  1.0f,  1.0f, 1.0f,  1.0f,  1.0f),
+		Vertex(1.0f, -1.0f,  1.0f, 1.0f, -1.0f,  1.0f),
+	};
+	// Indices
+	DWORD indices[] = {
+		// Front Face
+		0,  1,  2,
+		0,  2,  3,
+
+		// Back Face
+		4,  6,  5,
+		4,  7,  6,
+
+		// Top Face
+		8,  9, 10,
+		8, 10, 11,
+
+		// Bottom Face
+		12, 13, 14,
+		12, 14, 15,
+
+		// Left Face
+		16, 17, 18,
+		16, 18, 19,
+
+		// Right Face
+		20, 21, 22,
+		20, 22, 23
+	};
+
+	D3D11_BUFFER_DESC vertexBufferDesc;
+	ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
+
+	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	vertexBufferDesc.ByteWidth = sizeof(Vertex) * 8;
+	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vertexBufferDesc.CPUAccessFlags = 0;
+	vertexBufferDesc.MiscFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA vertexBufferData;
+	ZeroMemory(&vertexBufferData, sizeof(vertexBufferData));
+	vertexBufferData.pSysMem = v;
+	hr = d3d11Device->CreateBuffer(&vertexBufferDesc, &vertexBufferData, &squareVertBuffer);
+
+	//Set the vertex buffer
+	UINT stride = sizeof(Vertex);
+	UINT offset = 0;
+	d3d11DevCon->IASetVertexBuffers(0, 1, &squareVertBuffer, &stride, &offset);
+
+	// Indices
+	D3D11_BUFFER_DESC indexBufferDesc;
+	ZeroMemory(&indexBufferDesc, sizeof(indexBufferDesc));
+	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	indexBufferDesc.ByteWidth = sizeof(DWORD) * 12 * 3;
+	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	indexBufferDesc.CPUAccessFlags = 0;
+	indexBufferDesc.MiscFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA iinitData;
+	iinitData.pSysMem = indices;
+	d3d11Device->CreateBuffer(&indexBufferDesc, &iinitData, &squareIndexBuffer);
+
+	d3d11DevCon->IASetIndexBuffer(squareIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
 	
 
-	Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout;
-	D3D11_INPUT_ELEMENT_DESC layout[] = {
-	{
-		"POSITION",
-		0,
-		DXGI_FORMAT::DXGI_FORMAT_R32G32_FLOAT,
-		0,
-        0,
-		D3D11_INPUT_CLASSIFICATION::D3D11_INPUT_PER_VERTEX_DATA,
-		0
-	} };
+	//Set Primitive Topology
+	d3d11DevCon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	device->CreateInputLayout(
-		layout,
-		1,
-		vertexBlob->GetBufferPointer(),
-		vertexBlob->GetBufferSize(),
-		inputLayout.GetAddressOf()
-	);
-
-	context->IASetInputLayout(inputLayout.Get());
-
-
-	Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
-	Microsoft::WRL::ComPtr<ID3DBlob> pixelBlob;
-	{
-		using namespace Microsoft::WRL;
-
-		D3DReadFileToBlob(L"bin/debug/FragmentShader.cso", &pixelBlob);
-		device->CreatePixelShader(
-			pixelBlob->GetBufferPointer(), //pointer to the compiled shader.
-			pixelBlob->GetBufferSize(), // Size of the compiled vertex shader
-			nullptr,
-			&pixelShader // Address of a pointer to the vertex shader
-		);
-
-	}
-
-	const UINT vertexCount = 6;
-	const UINT stride = sizeof(float) * vertexCount;
-	const UINT offset = 0;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
 	
-	// Pass triangle to the GPU buffers
+	float bgColor[] = { 0, 0, 0.3f, 1 };
+
+	using namespace DirectX;
+
+	XMMATRIX WVP;
+	XMMATRIX World;
+	XMMATRIX camView;
+	XMMATRIX camProjection;
+
+	XMVECTOR camPosition;
+	XMVECTOR camTarget;
+	XMVECTOR camUp;
+	camPosition = XMVectorSet(0.0f, 3.0f, -8.0f, 0.0f);
+	camTarget = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
+	camUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	
+	camView = XMMatrixLookAtLH(camPosition, camTarget, camUp);
+	camProjection = XMMatrixPerspectiveFovLH(0.4f*3.14f, (float)WIDTH / HEIGHT, 0.01f, 1000.0f);
+	World = XMMatrixIdentity();
+	WVP = World * camView * camProjection;
+
+	struct cbPerObject
 	{
-		// define the triangle
-		const float vertices[vertexCount] =
-		{
-			 0.0f,  0.5f,
-			 0.5f, -0.5f,
-			-0.5f, -0.5f,
-		};
+		XMMATRIX  WVP;
+	} cbPerObj;
 
-		using namespace Microsoft::WRL;
-		
-		ComPtr<ID3D11Buffer> vertexBuffer;
-		
-		// Describes a buffer resource
-		D3D11_BUFFER_DESC bufferDescription;
-		ZeroMemory(&bufferDescription, sizeof(D3D11_BUFFER_DESC));
+	D3D11_BUFFER_DESC cbbd;
+	ZeroMemory(&cbbd, sizeof(D3D11_BUFFER_DESC));
+	cbbd.Usage = D3D11_USAGE_DEFAULT;
+	cbbd.ByteWidth = sizeof(cbPerObject);
+	cbbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbbd.CPUAccessFlags = 0;
+	cbbd.MiscFlags = 0;
+	
+	ID3D11Buffer* cbPerObjectBuffer;
+	hr = d3d11Device->CreateBuffer(&cbbd, NULL, &cbPerObjectBuffer);
 
-		bufferDescription.Usage = D3D11_USAGE_DEFAULT;
-		bufferDescription.ByteWidth = stride;
-		bufferDescription.StructureByteStride = vertexCount;
-		bufferDescription.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		bufferDescription.CPUAccessFlags = 0; // 0 if no CPU access is necessary
-		bufferDescription.MiscFlags = 0; // 0 if unused
+	cbPerObj.WVP = XMMatrixTranspose(WVP);
+	d3d11DevCon->UpdateSubresource(cbPerObjectBuffer, 0, NULL, &cbPerObj, 0, 0);
+	d3d11DevCon->VSSetConstantBuffers(0, 1, &cbPerObjectBuffer);
 
-		// initializing a subresource (in this case the vertex buffer)
-		D3D11_SUBRESOURCE_DATA bufferSourceData;
-		ZeroMemory(&bufferSourceData, sizeof(D3D11_SUBRESOURCE_DATA));
-		bufferSourceData.pSysMem = vertices;
+	Light light;
+	light.dir = XMFLOAT3(0.25f, 0.5f, -1.0f);
+	light.ambient = XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
+	light.diffuse = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 
-		device->CreateBuffer(&bufferDescription, &bufferSourceData, &vertexBuffer);
-		context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-	}
+	struct cbPerFrame
+	{
+		Light  light;
+	} constbuffPerFrame;
 
+	ZeroMemory(&cbbd, sizeof(D3D11_BUFFER_DESC));
+	cbbd.Usage = D3D11_USAGE_DEFAULT;
+	cbbd.ByteWidth = sizeof(cbPerFrame);
+	cbbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbbd.CPUAccessFlags = 0;
+	cbbd.MiscFlags = 0;
 
-	// MAIN LOOP
+	ID3D11Buffer* cbPerFrameBuffer;
+	hr = d3d11Device->CreateBuffer(&cbbd, NULL, &cbPerFrameBuffer);
+
+	constbuffPerFrame.light = light;
+	d3d11DevCon->UpdateSubresource(cbPerFrameBuffer, 0, NULL, &constbuffPerFrame, 0, 0);
+	d3d11DevCon->PSSetConstantBuffers(0, 1, &cbPerFrameBuffer);
+
+	XMMATRIX cube1World;
+	XMMATRIX cube2World;
+
+	XMMATRIX Rotation;
+	XMMATRIX Scale;
+	XMMATRIX Translation;
+	float rot = 0.01f;
+
 	while (!glfwWindowShouldClose(window))
 	{
-		// bind the vertex shader
-		context->VSSetShader(vertexShader.Get(), nullptr, 0);
-		//Drawing!!
-		context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		context->Draw(6, 0);
+		{
+			//Keep the cubes rotating
+			rot += .0005f;
+			if (rot > 6.28f)
+				rot = 0.0f;
 
-		// Like swap buffers in opengl
-		swapChain->Present(1, 0);
+			//Define cube1's world space matrix
+			XMVECTOR rotaxis = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+			Rotation = XMMatrixRotationAxis(rotaxis, rot);
+			Translation = XMMatrixTranslation(0.0f, 0.0f, 4.0f);
+
+			//Set cube1's world space using the transformations
+			cube1World = Translation * Rotation;
+
+			
+			//Define cube2's world space matrix
+			Rotation = XMMatrixRotationAxis(rotaxis, -rot);
+			Scale = XMMatrixScaling(1.3f, 1.3f, 1.3f);
+
+			//Set cube2's world space matrix
+			cube2World = Rotation * Scale;
+		}
+
+		//Clear our backbuffer to the updated color
+		d3d11DevCon->ClearRenderTargetView(renderTargetView, bgColor);
+		// Clear stencil and depth targets
+		d3d11DevCon->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+
+
+		///////////////**************new**************////////////////////
+		//Set the WVP matrix and send it to the constant buffer in effect file
+		WVP = cube1World * camView * camProjection;
+		cbPerObj.WVP = XMMatrixTranspose(WVP);
+		d3d11DevCon->UpdateSubresource(cbPerObjectBuffer, 0, NULL, &cbPerObj, 0, 0);
+		d3d11DevCon->VSSetConstantBuffers(0, 1, &cbPerObjectBuffer);
+
+		//Draw 1st cube the Square 36 indices
+		d3d11DevCon->DrawIndexed(36, 0, 0);
+
+		WVP = cube2World * camView * camProjection;
+		cbPerObj.WVP = XMMatrixTranspose(WVP);
+		d3d11DevCon->UpdateSubresource(cbPerObjectBuffer, 0, NULL, &cbPerObj, 0, 0);
+		d3d11DevCon->VSSetConstantBuffers(0, 1, &cbPerObjectBuffer);
+
+		//Draw the second cube
+		d3d11DevCon->DrawIndexed(36, 0, 0);
+
+		//Present the backbuffer to the screen
+		SwapChain->Present(0, 0);
+
 		// get the events
 		glfwPollEvents();
 		processInput(window);
 	}
 
-	glfwDestroyWindow(window);
-	glfwTerminate();
-	return 0;
+	//Release the COM Objects we created
+	SwapChain->Release();
+	d3d11Device->Release();
+	d3d11DevCon->Release();
+	renderTargetView->Release();
+	squareVertBuffer->Release();
+	squareIndexBuffer->Release();
+	VS->Release();
+	PS->Release();
+	VS_Buffer->Release();
+	PS_Buffer->Release();
+	vertLayout->Release();
+	depthStencilView->Release();
+	depthStencilBuffer->Release();
+	cbPerObjectBuffer->Release();
+	cbPerFrameBuffer->Release();
 }
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
