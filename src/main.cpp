@@ -32,6 +32,23 @@ struct Light
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow* window);
 
+const char* getFeatureLevel(D3D_FEATURE_LEVEL* in_featureLevel)
+{
+	switch (*in_featureLevel)
+	{
+	case D3D_FEATURE_LEVEL_11_1:
+		return "D3D_FEATURE_LEVEL_11_1";
+	case D3D_FEATURE_LEVEL_11_0:
+		return "D3D_FEATURE_LEVEL_11_0";
+	case D3D_FEATURE_LEVEL_10_1:
+		return "D3D_FEATURE_LEVEL_10_1";
+	case D3D_FEATURE_LEVEL_10_0:
+		return "D3D_FEATURE_LEVEL_10_0";
+	default:
+		return "UNKNOWN";
+	}
+}
+
 int main(int in_varc, char** in_varv)
 {
 	// WINDOW CREATION (GLFW)
@@ -44,9 +61,8 @@ int main(int in_varc, char** in_varv)
 			return 1;
 		}
 
-		// tell glfw we want to use core profile(no legacy stuff)
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-		glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
+		glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 		glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
 		// NO API since we wont use opengl
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -107,10 +123,20 @@ int main(int in_varc, char** in_varv)
 	swapChainDesc.Windowed = TRUE;
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
+	D3D_FEATURE_LEVEL features[] = {
+			D3D_FEATURE_LEVEL_11_1,
+			D3D_FEATURE_LEVEL_11_0,
+			D3D_FEATURE_LEVEL_10_1,
+			D3D_FEATURE_LEVEL_10_0,
+	};
+
+	D3D_FEATURE_LEVEL features_level;
 
 	//Create our SwapChain
-	hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, NULL, NULL, NULL,
-		D3D11_SDK_VERSION, &swapChainDesc, &SwapChain, &d3d11Device, NULL, &d3d11DevCon);
+	hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, NULL, features, 4,
+		D3D11_SDK_VERSION, &swapChainDesc, &SwapChain, &d3d11Device, &features_level, &d3d11DevCon);
+
+	printf("Feature Level: %s", getFeatureLevel(&features_level));
 
 	//Create our BackBuffer
 	ID3D11Texture2D* BackBuffer;
