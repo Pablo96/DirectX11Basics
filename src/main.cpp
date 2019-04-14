@@ -62,7 +62,7 @@ int main(int in_varc, char** in_varv)
 		}
 
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-		glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+		glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
 		glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
 		// NO API since we wont use opengl
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -163,6 +163,7 @@ int main(int in_varc, char** in_varv)
 
 	d3d11Device->CreateTexture2D(&depthStencilDesc, NULL, &depthStencilBuffer);
 	d3d11Device->CreateDepthStencilView(depthStencilBuffer, NULL, &depthStencilView);
+	depthStencilBuffer->Release();
 
 	//Set our Render Target with Depth target
 	d3d11DevCon->OMSetRenderTargets(1, &renderTargetView, depthStencilView);
@@ -187,6 +188,7 @@ int main(int in_varc, char** in_varv)
 	ID3D11Buffer* squareVertBuffer;
 	ID3D11VertexShader* VS;
 	ID3D11PixelShader* PS;
+	ID3D11PixelShader* PS2;
 	ID3D10Blob* VS_Buffer;
 	ID3D10Blob* PS_Buffer;
 	ID3D11InputLayout* vertLayout;
@@ -199,10 +201,13 @@ int main(int in_varc, char** in_varv)
 	//Create the Shader Objects
 	hr = d3d11Device->CreateVertexShader(VS_Buffer->GetBufferPointer(), VS_Buffer->GetBufferSize(), NULL, &VS);
 	hr = d3d11Device->CreatePixelShader(PS_Buffer->GetBufferPointer(), PS_Buffer->GetBufferSize(), NULL, &PS);
+	hr = D3DCompileFromFile(L"FragmentShader2.hlsl", 0, 0, "PSMain", "ps_5_0", 0, 0, &PS_Buffer, 0);
+	hr = d3d11Device->CreatePixelShader(PS_Buffer->GetBufferPointer(), PS_Buffer->GetBufferSize(), NULL, &PS2);
+	VS_Buffer->Release();
+	PS_Buffer->Release();
 
 	//Set Vertex and Pixel Shaders
 	d3d11DevCon->VSSetShader(VS, 0, 0);
-	d3d11DevCon->PSSetShader(PS, 0, 0);
 
 	D3D11_INPUT_ELEMENT_DESC layout[] =
 	{
@@ -290,7 +295,7 @@ int main(int in_varc, char** in_varv)
 	ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
 
 	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	vertexBufferDesc.ByteWidth = sizeof(Vertex) * 8;
+	vertexBufferDesc.ByteWidth = sizeof(Vertex) * 24;
 	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	vertexBufferDesc.CPUAccessFlags = 0;
 	vertexBufferDesc.MiscFlags = 0;
@@ -388,6 +393,9 @@ int main(int in_varc, char** in_varv)
 
 	constbuffPerFrame.light = light;
 	d3d11DevCon->UpdateSubresource(cbPerFrameBuffer, 0, NULL, &constbuffPerFrame, 0, 0);
+	d3d11DevCon->PSSetShader(PS, 0, 0);
+	d3d11DevCon->PSSetConstantBuffers(0, 1, &cbPerFrameBuffer);
+	d3d11DevCon->PSSetShader(PS2, 0, 0);
 	d3d11DevCon->PSSetConstantBuffers(0, 1, &cbPerFrameBuffer);
 
 	XMMATRIX cube1World;
@@ -429,6 +437,7 @@ int main(int in_varc, char** in_varv)
 		d3d11DevCon->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
 
+		d3d11DevCon->PSSetShader(PS, 0, 0);
 		///////////////**************new**************////////////////////
 		//Set the WVP matrix and send it to the constant buffer in effect file
 		WVP = cube1World * camView * camProjection;
@@ -439,6 +448,7 @@ int main(int in_varc, char** in_varv)
 		//Draw 1st cube the Square 36 indices
 		d3d11DevCon->DrawIndexed(36, 0, 0);
 
+		d3d11DevCon->PSSetShader(PS2, 0, 0);
 		WVP = cube2World * camView * camProjection;
 		cbPerObj.WVP = XMMatrixTranspose(WVP);
 		d3d11DevCon->UpdateSubresource(cbPerObjectBuffer, 0, NULL, &cbPerObj, 0, 0);
@@ -464,11 +474,9 @@ int main(int in_varc, char** in_varv)
 	squareIndexBuffer->Release();
 	VS->Release();
 	PS->Release();
-	VS_Buffer->Release();
-	PS_Buffer->Release();
+	
 	vertLayout->Release();
 	depthStencilView->Release();
-	depthStencilBuffer->Release();
 	cbPerObjectBuffer->Release();
 	cbPerFrameBuffer->Release();
 }
